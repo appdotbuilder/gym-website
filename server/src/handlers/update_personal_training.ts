@@ -1,20 +1,59 @@
+import { db } from '../db';
+import { personalTrainingSessionsTable } from '../db/schema';
 import { type UpdatePersonalTrainingInput, type PersonalTrainingSession } from '../schema';
+import { eq, and } from 'drizzle-orm';
 
-export async function updatePersonalTraining(input: UpdatePersonalTrainingInput): Promise<PersonalTrainingSession> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is updating a personal training session and persisting changes to the database.
-    // It should verify that the user owns the session before updating.
-    return Promise.resolve({
-        id: input.session_id,
-        user_id: input.user_id,
-        trainer_id: 0, // Placeholder
-        session_date: new Date(),
-        start_time: '10:00',
-        end_time: '11:00',
-        status: input.status || 'scheduled',
-        notes: input.notes || null,
-        price: 100.00, // Placeholder price
-        created_at: new Date(),
-        updated_at: new Date()
-    } as PersonalTrainingSession);
-}
+export const updatePersonalTraining = async (input: UpdatePersonalTrainingInput): Promise<PersonalTrainingSession> => {
+  try {
+    // First verify that the session exists and belongs to the user
+    const existingSession = await db.select()
+      .from(personalTrainingSessionsTable)
+      .where(
+        and(
+          eq(personalTrainingSessionsTable.id, input.session_id),
+          eq(personalTrainingSessionsTable.user_id, input.user_id)
+        )
+      )
+      .limit(1)
+      .execute();
+
+    if (existingSession.length === 0) {
+      throw new Error('Personal training session not found or does not belong to user');
+    }
+
+    // Prepare update data - only include fields that are provided
+    const updateData: any = {
+      updated_at: new Date()
+    };
+
+    if (input.status !== undefined) {
+      updateData.status = input.status;
+    }
+
+    if (input.notes !== undefined) {
+      updateData.notes = input.notes;
+    }
+
+    // Update the session
+    const result = await db.update(personalTrainingSessionsTable)
+      .set(updateData)
+      .where(
+        and(
+          eq(personalTrainingSessionsTable.id, input.session_id),
+          eq(personalTrainingSessionsTable.user_id, input.user_id)
+        )
+      )
+      .returning()
+      .execute();
+
+    // Convert numeric fields back to numbers before returning
+    const updatedSession = result[0];
+    return {
+      ...updatedSession,
+      price: parseFloat(updatedSession.price)
+    };
+  } catch (error) {
+    console.error('Personal training session update failed:', error);
+    throw error;
+  }
+};
